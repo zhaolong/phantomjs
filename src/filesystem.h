@@ -49,8 +49,15 @@ public:
     virtual ~File();
 
 public slots:
-    QString read();
+    /**
+     * @param n Number of bytes to read (a negative value means read up to EOF)
+     * NOTE: The use of QVariant here is necessary to catch JavaScript `null`.
+     * @see <a href="http://wiki.commonjs.org/wiki/IO/A#Instance_Methods">IO/A spec</a>
+     */
+    QString read(const QVariant &n = -1);
     bool write(const QString &data);
+
+    bool seek(const qint64 pos);
 
     QString readLine();
     bool writeLine(const QString &data);
@@ -115,6 +122,10 @@ public slots:
     QString workingDirectory() const;
     bool changeWorkingDirectory(const QString &path) const;
     QString absolute(const QString &relativePath) const;
+    // 'join(...)' implemented in "fs.js"
+    // 'split(path)' implemented in "fs.js"
+    QString fromNativeSeparators(const QString &path) const;
+    QString toNativeSeparators(const QString &path) const;
 
     // Links
     QString readLink(const QString &path) const;

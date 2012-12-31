@@ -45,6 +45,7 @@
 #include <QPainter>
 #include <QPrinter>
 #include <QWebHistory>
+#include <QWebHistoryItem>
 #include <QWebElement>
 #include <QWebFrame>
 #include <QWebPage>
@@ -92,7 +93,7 @@ public:
         Q_UNUSED(option);
 
         if (extension == ChooseMultipleFilesExtension) {
-            static_cast<ChooseMultipleFilesExtensionReturn*>(output)->fileNames = QStringList(m_uploadFile);
+            static_cast<ChooseMultipleFilesExtensionReturn*>(output)->fileNames = m_uploadFiles;
             return true;
         } else {
             return false;
@@ -114,7 +115,7 @@ protected:
         Q_UNUSED(originatingFrame);
 
         QString filePath = m_webPage->filePicker(oldFile);
-        QString choosenFile = !filePath.isNull() ? filePath : m_uploadFile;
+        QString choosenFile = !filePath.isNull() ? filePath : m_uploadFiles.first();
 
         // Return the value coming from the "filePicker" callback, IFF not null.
         qDebug() << "CustomPage - file choosen for upload:" << choosenFile;
@@ -177,14 +178,15 @@ protected:
             navigationType = "Other";
             break;
         }
-
+        bool isNavigationLocked = m_webPage->navigationLocked();
+        
         emit m_webPage->navigationRequested(
                     request.url(),                   //< Requested URL
                     navigationType,                  //< Navigation Type
-                    !m_webPage->navigationLocked(),  //< Is navigation locked?
+                    !isNavigationLocked,             //< Is navigation locked?
                     isMainFrame);                    //< Is main frame?
 
-        return !m_webPage->navigationLocked();
+        return !isNavigationLocked;
     }
 
     QWebPage *createWindow (WebWindowType type) {
@@ -212,7 +214,7 @@ protected:
 private:
     WebPage *m_webPage;
     QString m_userAgent;
-    QString m_uploadFile;
+    QStringList m_uploadFiles;
     friend class WebPage;
 };
 
@@ -395,6 +397,16 @@ void WebPage::setContent(const QString &content)
     m_mainFrame->setHtml(content);
 }
 
+void WebPage::setContent(const QString &content, const QString &baseUrl)
+{
+    if (baseUrl == "about:blank") {
+        m_mainFrame->setHtml(BLANK_HTML);
+    } else {
+        m_mainFrame->setHtml(content, QUrl(baseUrl));
+    }
+}
+
+
 void WebPage::setFrameContent(const QString &content)
 {
     m_currentFrame->setHtml(content);
@@ -425,10 +437,10 @@ bool WebPage::canGoBack()
     return m_customWebPage->history()->canGoBack();
 }
 
-bool WebPage::back()
+bool WebPage::goBack()
 {
     if (canGoBack()) {
-        m_customWebPage->triggerAction(QWebPage::Back);
+        m_customWebPage->history()->back();
         return true;
     }
     return false;
@@ -439,12 +451,29 @@ bool WebPage::canGoForward()
     return m_customWebPage->history()->canGoForward();
 }
 
-bool WebPage::forward()
+bool WebPage::goForward()
 {
     if (canGoForward()) {
-        m_customWebPage->triggerAction(QWebPage::Forward);
+        m_customWebPage->history()->forward();
         return true;
     }
+    return false;
+}
+
+bool WebPage::go(int historyItemRelativeIndex)
+{
+    // Convert the relative index to absolute
+    int historyItemIndex = m_customWebPage->history()->currentItemIndex() + historyItemRelativeIndex;
+
+    // Fetch the right item from the history
+    QWebHistoryItem historyItem = m_customWebPage->history()->itemAt(historyItemIndex);
+
+    // Go to the history item, if it's valid
+    if (historyItem.isValid()) {
+        m_customWebPage->history()->goToItem(historyItem);
+        return true;
+    }
+
     return false;
 }
 
@@ -457,6 +486,7 @@ void WebPage::stop()
 {
     m_customWebPage->triggerAction(QWebPage::Stop);
 }
+
 
 QString WebPage::plainText() const
 {
@@ -533,7 +563,7 @@ QString WebPage::userAgent() const
 
 void WebPage::setNavigationLocked(bool lock)
 {
-    m_navigationLocked = lock;;
+    m_navigationLocked = lock;
 }
 
 bool WebPage::navigationLocked()
@@ -1087,13 +1117,13 @@ QString WebPage::footer(int page, int numPages)
     return getHeaderFooter(m_paperSize, "footer", m_mainFrame, page, numPages);
 }
 
-void WebPage::uploadFile(const QString &selector, const QString &fileName)
+void WebPage::_uploadFile(const QString &selector, const QStringList &fileNames)
 {
     QWebElement el = m_currentFrame->findFirstElement(selector);
     if (el.isNull())
         return;
 
-    m_customWebPage->m_uploadFile = fileName;
+    m_customWebPage->m_uploadFiles = fileNames;
     el.evaluateJavaScript(JS_ELEMENT_CLICK);
 }
 
@@ -1456,6 +1486,7 @@ void WebPage::initCompletions()
     addCompletion("addCookie");
     addCompletion("deleteCookie");
     addCompletion("clearCookies");
+    addCompletion("setContent");
     // callbacks
     addCompletion("onAlert");
     addCompletion("onCallback");

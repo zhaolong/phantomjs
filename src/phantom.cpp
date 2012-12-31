@@ -35,6 +35,9 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QWebPage>
+#include <QDebug>
+#include <QMetaObject>
+#include <QMetaProperty>
 
 #include "consts.h"
 #include "terminal.h"
@@ -45,6 +48,7 @@
 #include "system.h"
 #include "callback.h"
 #include "cookiejar.h"
+#include "childprocess.h"
 
 static Phantom *phantomInstance = NULL;
 
@@ -55,6 +59,7 @@ Phantom::Phantom(QObject *parent)
     , m_returnValue(0)
     , m_filesystem(0)
     , m_system(0)
+    , m_childprocess(0)
 {
     QStringList args = QApplication::arguments();
 
@@ -179,12 +184,37 @@ bool Phantom::execute()
     if (m_terminated)
         return false;
 
-    if (m_config.scriptFile().isEmpty()) {
-        // REPL mode requested
+#ifndef QT_NO_DEBUG_OUTPUT
+    qDebug() << "Phantom - execute: Configuration";
+    const QMetaObject* configMetaObj = m_config.metaObject();
+    for (int i = 0, ilen = configMetaObj->propertyCount(); i < ilen; ++i) {
+        qDebug() << "    " << i << configMetaObj->property(i).name() << ":" << m_config.property(configMetaObj->property(i).name()).toString();
+    }
+
+    qDebug() << "Phantom - execute: Script & Arguments";
+    qDebug() << "    " << "script:" << m_config.scriptFile();
+    QStringList args = m_config.scriptArgs();
+    for (int i = 0, ilen = args.length(); i < ilen; ++i) {
+        qDebug() << "    " << i << "arg:" << args.at(i);
+    }
+#endif
+
+    if (m_config.isWebdriverMode()) {                                   // Remote WebDriver mode requested
+        qDebug() << "Phantom - execute: Starting Remote WebDriver mode";
+
+        Terminal::instance()->cout("PhantomJS is launching GhostDriver...");
+        if (!Utils::injectJsInFrame(":/ghostdriver/main.js", m_scriptFileEnc, QDir::currentPath(), m_page->mainFrame(), true)) {
+            m_returnValue = -1;
+            return false;
+        }
+    } else if (m_config.scriptFile().isEmpty()) {                       // REPL mode requested
+        qDebug() << "Phantom - execute: Starting REPL mode";
+
         // Create the REPL: it will launch itself, no need to store this variable.
         REPL::getInstance(m_page->mainFrame(), this);
-    } else {
-        // Load the User Script
+    } else {                                                            // Load the User Script
+        qDebug() << "Phantom - execute: Starting normal mode";
+
         if (m_config.debug()) {
             // Debug enabled
             if (!Utils::loadJSForDebug(m_config.scriptFile(), m_scriptFileEnc, QDir::currentPath(), m_page->mainFrame(), m_config.remoteDebugAutorun())) {
@@ -261,6 +291,11 @@ void Phantom::setCookiesEnabled(const bool value)
     }
 }
 
+bool Phantom::webdriverMode() const
+{
+    return m_config.isWebdriverMode();
+}
+
 // public slots:
 QObject *Phantom::createWebPage()
 {
@@ -308,6 +343,15 @@ QObject *Phantom::createSystem()
     return m_system;
 }
 
+QObject *Phantom::_createChildProcess()
+{
+    if (!m_childprocess) {
+        m_childprocess = new ChildProcess(this);
+    }
+
+    return m_childprocess;
+}
+
 QObject* Phantom::createCallback()
 {
     return new Callback(this);
@@ -331,10 +375,19 @@ void Phantom::loadModule(const QString &moduleSource, const QString &filename)
 
 bool Phantom::injectJs(const QString &jsFilePath)
 {
+    QString pre = "";
+    qDebug() << "Phantom - injectJs:" << jsFilePath;
+
+    // If in Remote Webdriver Mode, we need to manipulate the PATH, to point it to a resource in `ghostdriver.qrc`
+    if (webdriverMode()) {
+        pre = ":/ghostdriver/";
+        qDebug() << "Phantom - injectJs: prepending" << pre;
+    }
+
     if (m_terminated)
         return false;
 
-    return Utils::injectJsInFrame(jsFilePath, libraryPath(), m_page->mainFrame());
+    return Utils::injectJsInFrame(pre + jsFilePath, libraryPath(), m_page->mainFrame());
 }
 
 void Phantom::exit(int code)

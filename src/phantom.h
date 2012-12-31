@@ -39,6 +39,7 @@
 #include "config.h"
 #include "replcompletable.h"
 #include "system.h"
+#include "childprocess.h"
 
 class WebPage;
 class CustomPage;
@@ -56,6 +57,7 @@ class Phantom: public REPLCompletable
     Q_PROPERTY(QObject *page READ page)
     Q_PROPERTY(bool cookiesEnabled READ areCookiesEnabled WRITE setCookiesEnabled)
     Q_PROPERTY(QVariantList cookies READ cookies WRITE setCookies)
+    Q_PROPERTY(bool webdriverMode READ webdriverMode)
 
 private:
     // Private constructor: the Phantom class is a singleton
@@ -98,6 +100,13 @@ public:
 
     bool areCookiesEnabled() const;
     void setCookiesEnabled(const bool value);
+
+    bool webdriverMode() const;
+
+    /**
+     * Create `child_process` module instance
+     */
+    Q_INVOKABLE QObject *_createChildProcess();
 
 public slots:
     QObject *createWebPage();
@@ -182,6 +191,7 @@ private:
     QVariantMap m_defaultPageSettings;
     FileSystem *m_filesystem;
     System *m_system;
+    ChildProcess *m_childprocess;
     QList<QPointer<WebPage> > m_pages;
     QList<QPointer<WebServer> > m_servers;
     Config m_config;

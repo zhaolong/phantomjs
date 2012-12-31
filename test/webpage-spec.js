@@ -102,10 +102,61 @@ describe("WebPage object", function() {
         expect(page).toNotEqual(null);
     });
 
+    it("should be able to get any signal handler that are currently set on it", function() {
+        page.onInitialized = undefined;
+        expect(page.onInitialized).toBeUndefined();
+        var onInitialized1 = function() { var x = "x"; };
+        page.onInitialized = onInitialized1;
+        expect(page.onInitialized).toEqual(onInitialized1);
+        var onInitialized2 = function() { var y = "y"; };
+        page.onInitialized = onInitialized2;
+        expect(page.onInitialized).toEqual(onInitialized2);
+        expect(page.onInitialized).toNotEqual(onInitialized1);
+        page.onInitialized = null;
+        // Will only allow setting to a function value, so setting it to `null` returns `undefined`
+        expect(page.onInitialized).toBeUndefined();
+        page.onInitialized = undefined;
+        expect(page.onInitialized).toBeUndefined();
+    });
+
+    it("should be able to get any callback handler that are currently set on it", function() {
+        page.onConfirm = undefined;
+        expect(page.onConfirm).toBeUndefined();
+        var onConfirmFunc1 = function() { return !"x"; };
+        page.onConfirm = onConfirmFunc1;
+        expect(page.onConfirm).toEqual(onConfirmFunc1);
+        var onConfirmFunc2 = function() { return !!"y"; };
+        page.onConfirm = onConfirmFunc2;
+        expect(page.onConfirm).toEqual(onConfirmFunc2);
+        expect(page.onConfirm).toNotEqual(onConfirmFunc1);
+        page.onConfirm = null;
+        // Will only allow setting to a function value, so setting it to `null` returns `undefined`
+        expect(page.onConfirm).toBeUndefined();
+        page.onConfirm = undefined;
+        expect(page.onConfirm).toBeUndefined();
+    });
+    
+    it("should be able to get the error signal handler that is currently set on it (currently a special 1-off case)", function() {
+        page.onError = undefined;
+        expect(page.onError).toBeUndefined();
+        var onErrorFunc1 = function() { return !"x"; };
+        page.onError = onErrorFunc1;
+        expect(page.onError).toEqual(onErrorFunc1);
+        var onErrorFunc2 = function() { return !!"y"; };
+        page.onError = onErrorFunc2;
+        expect(page.onError).toEqual(onErrorFunc2);
+        expect(page.onError).toNotEqual(onErrorFunc1);
+        page.onError = null;
+        // Will only allow setting to a function value, so setting it to `null` returns `undefined`
+        expect(page.onError).toBeUndefined();
+        page.onError = undefined;
+        expect(page.onError).toBeUndefined();
+    });
+
     checkPageCallback(page);
     checkPageConfirm(page);
     checkPagePrompt(page);
-
+    
     checkClipRect(page, {height:0,left:0,top:0,width:0});
 
     expectHasPropertyString(page, 'content');
@@ -121,7 +172,7 @@ describe("WebPage object", function() {
 
     expectHasProperty(page, 'paperSize');
     it("should have paperSize as an empty object", function() {
-            expect(page.paperSize).toEqual({});
+        expect(page.paperSize).toEqual({});
     });
 
     checkScrollPosition(page, {left:0,top:0});
@@ -134,12 +185,12 @@ describe("WebPage object", function() {
 
     expectHasProperty(page, 'customHeaders');
     it("should have customHeaders as an empty object", function() {
-            expect(page.customHeaders).toEqual({});
+        expect(page.customHeaders).toEqual({});
     });
 
     expectHasProperty(page, 'zoomFactor');
     it("should have zoomFactor of 1", function() {
-            expect(page.zoomFactor).toEqual(1.0);
+        expect(page.zoomFactor).toEqual(1.0);
     });
 
     expectHasProperty(page, 'event');
@@ -173,6 +224,23 @@ describe("WebPage object", function() {
     expectHasFunction(page, 'addCookie');
     expectHasFunction(page, 'deleteCookie');
     expectHasFunction(page, 'clearCookies');
+    expectHasFunction(page, 'setContent');
+
+    it("should set content and location", function() {
+        runs(function() {
+            var expectedContent = "<html><body><div>Test div</div></body></html>";
+            var expectedLocation = "http://www.phantomjs.org/";
+            page.setContent(expectedContent, expectedLocation);
+            var actualLocation = page.evaluate(function(){
+                return window.location.href;
+            });
+            var actualContent = page.evaluate(function(){
+                return document.documentElement.textContent;
+            });
+            expect(expectedLocation).toEqual(actualLocation);
+            expect(expectedContent).toContain("Test div");
+        });
+    });
 
     it("should handle keydown event", function() {
         runs(function() {
@@ -442,9 +510,11 @@ describe("WebPage object", function() {
     it("should handle file uploads", function() {
         runs(function() {
             page.content = '<input type="file" id="file">\n' +
-                           '<input type="file" id="file2" multiple>';
+                           '<input type="file" id="file2" multiple>\n' +
+                           '<input type="file" id="file3" multiple>';
             page.uploadFile("#file", 'README.md');
             page.uploadFile("#file2", 'README.md');
+            page.uploadFile("#file3", ['README.md', 'LICENSE.BSD']);
         });
 
         waits(50);
@@ -461,6 +531,17 @@ describe("WebPage object", function() {
                 return document.getElementById('file2').files[0].fileName;
             });
             expect(fileName).toEqual('README.md');
+
+            var files = page.evaluate(function() {
+                var files = document.getElementById('file3').files;
+                return {
+                    length: files.length,
+                    fileNames: [files[0].fileName, files[1].fileName]
+                }
+            });
+            expect(files.length).toEqual(2)
+            expect(files.fileNames[0]).toEqual('README.md');
+            expect(files.fileNames[1]).toEqual('LICENSE.BSD');
         });
     });
 
@@ -939,6 +1020,26 @@ describe("WebPage object", function() {
                 [true, 0, "string"],
                 /\d+\w*\//);
             expect(message).toEqual("PASS");
+        });
+    });
+    
+    it('should open url using secure connection', function() {
+        var page = require('webpage').create();
+        var url = 'https://en.wikipedia.org';
+      
+        var handled = false;
+      
+        runs(function() {
+            page.open(url, function(status) {
+                expect(status == 'success').toEqual(true);
+                handled = true;
+            });
+        });
+          
+        waits(3000);
+        
+        runs(function() {
+            expect(handled).toEqual(true);
         });
     });
 });
@@ -1508,6 +1609,42 @@ describe("WebPage 'onFilePicker'", function() {
 
         runs(function() {
             server.close();
+        });
+    });
+});
+
+describe('WebPage navigation events', function() {
+    it('should navigate to relative url using window.location', function () {
+        var page = require("webpage").create();
+        var base = 'https://github.com';
+        var path = '/n1k0';
+        var expected = 'https://github.com/n1k0';
+        var isHandled = false;
+
+        runs(function() {
+            page.onNavigationRequested = function(url, navigationType, navigationLocked, isMainFrame) {
+                if (!page.testStarted) {
+                    return;
+                }
+
+                if (url === expected) {
+                    isHandled = true;
+                }
+            };
+
+            page.open(base, function(status) {
+                page.testStarted = true;
+
+                page.evaluate(function(path) {
+                    window.location = path;
+                }, path);
+            });
+        });
+
+        waits(10000);
+
+        runs(function() {
+            expect(isHandled).toEqual(true);
         });
     });
 });
