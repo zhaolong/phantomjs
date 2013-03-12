@@ -4,6 +4,7 @@
   Copyright (C) 2012 Ariya Hidayat <ariya.hidayat@gmail.com>
   Copyright (C) 2011 Ariya Hidayat <ariya.hidayat@gmail.com>
   Copyright (C) 2011 execjosh, http://execjosh.blogspot.com
+  Copyright (C) 2013 James M. Greene <james.m.greene@gmail.com>
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -46,23 +47,25 @@ static const struct QCommandLineConfigEntry flags[] =
 {
     { QCommandLine::Option, '\0', "cookies-file", "Sets the file name to store the persistent cookies", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "config", "Specifies JSON-formatted configuration file", QCommandLine::Optional },
-    { QCommandLine::Option, '\0', "debug", "Prints additional warning and debug message: 'yes' or 'no' (default)", QCommandLine::Optional },
-    { QCommandLine::Option, '\0', "disk-cache", "Enables disk cache: 'yes' (default) or 'no'", QCommandLine::Optional },
-    { QCommandLine::Option, '\0', "ignore-ssl-errors", "Ignores SSL errors (expired/self-signed certificate errors): 'yes' or 'no' (default)", QCommandLine::Optional },
-    { QCommandLine::Option, '\0', "load-images", "Loads all inlined images: 'yes' (default) or 'no'", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "debug", "Prints additional warning and debug message: 'true' or 'false' (default)", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "disk-cache", "Enables disk cache: 'true' or 'false' (default)", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "ignore-ssl-errors", "Ignores SSL errors (expired/self-signed certificate errors): 'true' or 'false' (default)", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "load-images", "Loads all inlined images: 'true' (default) or 'false'", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "local-storage-path", "Specifies the location for offline local storage", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "local-storage-quota", "Sets the maximum size of the offline local storage (in KB)", QCommandLine::Optional },
-    { QCommandLine::Option, '\0', "local-to-remote-url-access", "Allows local content to access remote URL: 'yes' or 'no' (default)", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "local-to-remote-url-access", "Allows local content to access remote URL: 'true' or 'false' (default)", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "max-disk-cache-size", "Limits the size of the disk cache (in KB)", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "output-encoding", "Sets the encoding for the terminal output, default is 'utf8'", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "remote-debugger-port", "Starts the script in a debug harness and listens on the specified port", QCommandLine::Optional },
-    { QCommandLine::Option, '\0', "remote-debugger-autorun", "Runs the script in the debugger immediately: 'yes' or 'no' (default)", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "remote-debugger-autorun", "Runs the script in the debugger immediately: 'true' or 'false' (default)", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "proxy", "Sets the proxy server, e.g. '--proxy=http://proxy.company.com:8080'", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "proxy-auth", "Provides authentication information for the proxy, e.g. ''-proxy-auth=username:password'", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "proxy-type", "Specifies the proxy type, 'http' (default), 'none' (disable completely), or 'socks5'", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "script-encoding", "Sets the encoding used for the starting script, default is 'utf8'", QCommandLine::Optional },
-    { QCommandLine::Option, '\0', "web-security", "Enables web security, 'yes' (default) or 'no'", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "web-security", "Enables web security, 'true' (default) or 'false'", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "ssl-protocol", "Sets the SSL protocol (supported protocols: 'SSLv3' (default), 'SSLv2', 'TLSv1', 'any')", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "webdriver", "Starts in 'Remote WebDriver mode' (embedded GhostDriver): '[[<IP>:]<PORT>]' (default '127.0.0.1:8910') ", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "webdriver-selenium-grid-hub", "URL to the Selenium Grid HUB: 'URL_TO_HUB' (default 'none') (NOTE: works only together with '--webdriver') ", QCommandLine::Optional },
     { QCommandLine::Param, '\0', "script", "Script", QCommandLine::Flags(QCommandLine::Optional|QCommandLine::ParameterFence)},
     { QCommandLine::Param, '\0', "argument", "Script argument", QCommandLine::OptionalMultiple },
     { QCommandLine::Switch, 'h', "help", "Shows this message and quits", QCommandLine::Optional },
@@ -99,6 +102,20 @@ void Config::processArgs(const QStringList &args)
     m_cmdLine->setArguments(args);
     m_cmdLine->setConfig(flags);
     m_cmdLine->parse();
+
+    // Inject command line parameters to be picked up by GhostDriver
+    if (isWebdriverMode()) {
+        QStringList argsForGhostDriver;
+
+        m_scriptFile = "main.js";                       //< launch script
+        argsForGhostDriver << m_webdriver;              //< ip:port
+        if (!m_webdriverSeleniumGridHub.isEmpty()) {
+            argsForGhostDriver << m_webdriverSeleniumGridHub;    //< selenium grid url
+        }
+
+        // Clear current args and override with those
+        setScriptArgs(argsForGhostDriver);
+    }
 }
 
 void Config::loadJsonFile(const QString &filePath)
@@ -424,6 +441,48 @@ bool Config::javascriptCanCloseWindows() const
     return m_javascriptCanCloseWindows;
 }
 
+void Config::setWebdriver(const QString &webdriverConfig)
+{
+    // This option can be provided empty: in that case we should use the default IP:PORT configuration
+    QString ip      = "127.0.0.1";
+    QString port    = "8910";
+
+    // Parse and validate the configuration
+    bool isValidPort;
+    QStringList wdCfg = webdriverConfig.split(':');
+    if (wdCfg.length() == 1 && wdCfg[0].toInt(&isValidPort) && isValidPort) {
+        // Only a PORT was provided
+        port = wdCfg[0];
+    } else if(wdCfg.length() == 2 && !wdCfg[0].isEmpty() && wdCfg[1].toInt(&isValidPort) && isValidPort) {
+        // Both IP and PORT provided
+        ip = wdCfg[0];
+        port = wdCfg[1];
+    }
+
+    // Setting the "webdriver" configuration
+    m_webdriver = QString("%1:%2").arg(ip).arg(port);
+}
+
+QString Config::webdriver() const
+{
+    return m_webdriver;
+}
+
+bool Config::isWebdriverMode() const
+{
+    return !m_webdriver.isEmpty();
+}
+
+void Config::setWebdriverSeleniumGridHub(const QString &hubUrl)
+{
+    m_webdriverSeleniumGridHub = hubUrl;
+}
+
+QString Config::webdriverSeleniumGridHub() const
+{
+    return m_webdriverSeleniumGridHub;
+}
+
 // private:
 void Config::resetToDefaults()
 {
@@ -455,6 +514,8 @@ void Config::resetToDefaults()
     m_helpFlag = false;
     m_printDebugMessages = false;
     m_sslProtocol = "sslv3";
+    m_webdriver = QString();
+    m_webdriverSeleniumGridHub = QString();
 }
 
 void Config::setProxyAuthPass(const QString &value)
@@ -597,6 +658,12 @@ void Config::handleOption(const QString &option, const QVariant &value)
     }
     if (option == "ssl-protocol") {
         setSslProtocol(value.toString());
+    }
+    if (option == "webdriver") {
+        setWebdriver(value.toString());
+    }
+    if (option == "webdriver-selenium-grid-hub") {
+        setWebdriverSeleniumGridHub(value.toString());
     }
 }
 

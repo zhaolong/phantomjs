@@ -36,8 +36,6 @@
 #include <QWebPage>
 #include <QWebFrame>
 
-#include "replcompletable.h"
-
 class Config;
 class CustomPage;
 class WebpageCallbacks;
@@ -45,7 +43,7 @@ class NetworkAccessManager;
 class QWebInspector;
 class Phantom;
 
-class WebPage: public REPLCompletable, public QWebFrame::PrintCallback
+class WebPage : public QObject, public QWebFrame::PrintCallback
 {
     Q_OBJECT
     Q_PROPERTY(QString title READ title)
@@ -235,7 +233,7 @@ public slots:
     void close();
 
     QVariant evaluateJavaScript(const QString &code);
-    bool render(const QString &fileName);
+    bool render(const QString &fileName, const QVariantMap &map = QVariantMap());
     /**
      * Render the page as base-64 encoded string.
      * Default image format is "png".
@@ -255,9 +253,10 @@ public slots:
     QObject *_getFilePickerCallback();
     QObject *_getJsConfirmCallback();
     QObject *_getJsPromptCallback();
-    void uploadFile(const QString &selector, const QString &fileName);
+    void _uploadFile(const QString &selector, const QStringList &fileNames);
     void sendEvent(const QString &type, const QVariant &arg1 = QVariant(), const QVariant &arg2 = QVariant(), const QString &mouseButton = QString(), const QVariant &modifierArg = QVariant());
 
+    void setContent(const QString &content, const QString &baseUrl);
     /**
      * Returns a Child Page that matches the given <code>"window.name"</code>.
      * This utility method is faster than accessing the
@@ -412,10 +411,10 @@ public slots:
     bool canGoBack();
     /**
      * Goes back in the Navigation History
-     * @brief back
+     * @brief goBack
      * @return "true" if it does go back in the Navigation History, "false" otherwise
      */
-    bool back();
+    bool goBack();
     /**
      * Checks if this Page can go forward in the Navigation History (i.e. next URL)
      * @brief canGoForward
@@ -424,10 +423,21 @@ public slots:
     bool canGoForward();
     /**
      * Goes forward in the Navigation History
-     * @brief forward
+     * @brief goForward
      * @return "true" if it does go forward in the Navigation History, "false" otherwise
      */
-    bool forward();
+    bool goForward();
+    /**
+     * Go to the page identified by its relative location to the current page.
+     * For example '-1' for the previous page or 1 for the next page.
+     *
+     * Modelled after JavaScript "window.go(num)" method:
+     * {@see https://developer.mozilla.org/en-US/docs/DOM/window.history#Syntax}.
+     * @brief go
+     * @param historyRelativeIndex
+     * @return "true" if it does go forward/backgward in the Navigation History, "false" otherwise
+     */
+    bool go(int historyRelativeIndex);
     /**
      * Reload current page
      * @brief reload
@@ -451,8 +461,9 @@ signals:
     void javaScriptAlertSent(const QString &msg);
     void javaScriptConsoleMessageSent(const QString &message);
     void javaScriptErrorSent(const QString &msg, const QString &stack);
-    void resourceRequested(const QVariant &req);
+    void resourceRequested(const QVariant &requestData, QObject *request);
     void resourceReceived(const QVariant &resource);
+    void resourceError(const QVariant &errorData);
     void urlChanged(const QUrl &url);
     void navigationRequested(const QUrl &url, const QString &navigationType, bool navigationLocked, bool isMainFrame);
     void rawPageCreated(QObject *page);
@@ -479,8 +490,6 @@ private:
     QString filePicker(const QString &oldFile);
     bool javaScriptConfirm(const QString &msg);
     bool javaScriptPrompt(const QString &msg, const QString &defaultValue, QString *result);
-
-    virtual void initCompletions();
 
 private:
     CustomPage *m_customWebPage;

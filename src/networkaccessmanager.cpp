@@ -67,6 +67,27 @@ static const char *toString(QNetworkAccessManager::Operation op)
     return str;
 }
 
+JsNetworkRequest::JsNetworkRequest(QNetworkRequest* request, QObject* parent)
+    : QObject(parent)
+{
+    m_networkRequest = request;
+}
+
+void JsNetworkRequest::abort()
+{
+    if (m_networkRequest) {
+        m_networkRequest->setUrl(QUrl());
+    }
+}
+
+
+void JsNetworkRequest::changeUrl(const QString& url)
+{
+    if (m_networkRequest) {
+        m_networkRequest->setUrl(QUrl(url));
+    }
+}
+
 // public:
 NetworkAccessManager::NetworkAccessManager(QObject *parent, const Config *config)
     : QNetworkAccessManager(parent)
@@ -89,6 +110,10 @@ NetworkAccessManager::NetworkAccessManager(QObject *parent, const Config *config
 
     if (QSslSocket::supportsSsl()) {
         m_sslConfiguration = QSslConfiguration::defaultConfiguration();
+
+        if (config->ignoreSslErrors()) {
+            m_sslConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
+        }
 
         // set the SSL protocol to SSLv3 by the default
         m_sslConfiguration.setProtocol(QSsl::SslV3);
@@ -172,8 +197,7 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
         ++i;
     }
 
-    // Pass duty to the superclass - Nothing special to do here (yet?)
-    QNetworkReply *reply = QNetworkAccessManager::createRequest(op, req, outgoingData);
+    m_idCounter++;
 
     QVariantList headers;
     foreach (QByteArray headerName, req.rawHeaderList()) {
@@ -183,9 +207,6 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
         headers += header;
     }
 
-    m_idCounter++;
-    m_ids[reply] = m_idCounter;
-
     QVariantMap data;
     data["id"] = m_idCounter;
     data["url"] = url.data();
@@ -193,10 +214,21 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
     data["headers"] = headers;
     data["time"] = QDateTime::currentDateTime();
 
+    JsNetworkRequest jsNetworkRequest(&req, this);
+    emit resourceRequested(data, &jsNetworkRequest);
+
+    // Pass duty to the superclass - Nothing special to do here (yet?)
+    QNetworkReply *reply = QNetworkAccessManager::createRequest(op, req, outgoingData);
+
+    // reparent jsNetworkRequest to make sure that it will be destroyed with QNetworkReply
+    jsNetworkRequest.setParent(reply);
+
+    m_ids[reply] = m_idCounter;
+
     connect(reply, SIGNAL(readyRead()), this, SLOT(handleStarted()));
     connect(reply, SIGNAL(sslErrors(const QList<QSslError> &)), this, SLOT(handleSslErrors(const QList<QSslError> &)));
+    connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(handleNetworkError()));
 
-    emit resourceRequested(data);
     return reply;
 }
 
@@ -209,7 +241,7 @@ void NetworkAccessManager::handleStarted()
         return;
 
     m_started += reply;
-
+    
     QVariantList headers;
     foreach (QByteArray headerName, reply->rawHeaderList()) {
         QVariantMap header;
@@ -249,7 +281,7 @@ void NetworkAccessManager::provideAuthentication(QNetworkReply *reply, QAuthenti
     if (m_authAttempts++ < m_maxAuthAttempts)
     {
         authenticator->setUser(m_userName);
-        authenticator->setPassword(m_password);       
+        authenticator->setPassword(m_password);
     }
     else
     {
@@ -295,4 +327,27 @@ void NetworkAccessManager::handleSslErrors(const QList<QSslError> &errors)
 
     if (m_ignoreSslErrors)
         reply->ignoreSslErrors();
+}
+
+void NetworkAccessManager::handleNetworkError()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    qDebug() << "Network - Resource request error:"
+             << reply->error()
+             << "(" << reply->errorString() << ")"
+             << "URL:" << reply->url().toString();
+
+    m_ids.remove(reply);
+
+    if (m_started.contains(reply))
+        m_started.remove(reply);
+
+    QVariantMap data;
+    data["url"] = reply->url().toString();
+    data["errorCode"] = reply->error();
+    data["errorString"] = reply->errorString();
+
+    emit resourceError(data);
+
+    reply->deleteLater();
 }
