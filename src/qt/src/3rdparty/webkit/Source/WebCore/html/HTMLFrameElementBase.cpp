@@ -95,6 +95,10 @@ bool HTMLFrameElementBase::isURLAllowed() const
 
 void HTMLFrameElementBase::openURL(bool lockHistory, bool lockBackForwardList)
 {
+    // Disable sub frame loading.
+    // Hacked By lZl on 2013/01/14.
+    return;
+        
     if (!isURLAllowed())
         return;
 

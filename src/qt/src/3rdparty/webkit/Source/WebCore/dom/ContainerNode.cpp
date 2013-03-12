@@ -1086,7 +1086,9 @@ static void dispatchChildInsertionEvents(Node* child)
     RefPtr<Document> document = child->document();
 
     if (c->parentNode() && document->hasListenerType(Document::DOMNODEINSERTED_LISTENER))
-        c->dispatchScopedEvent(MutationEvent::create(eventNames().DOMNodeInsertedEvent, true, c->parentNode()));
+		// Hacked by lZl on 2013/01/18
+        // c->dispatchScopedEvent(MutationEvent::create(eventNames().DOMNodeInsertedEvent, true, c->parentNode()));
+		c->dispatchScopedEvent(MutationEvent::create(eventNames().DOMNodeInsertedEvent, true, c));
 
     // dispatch the DOMNodeInsertedIntoDocument event to all descendants
     if (c->inDocument() && document->hasListenerType(Document::DOMNODEINSERTEDINTODOCUMENT_LISTENER)) {
@@ -1108,7 +1110,9 @@ static void dispatchChildRemovalEvents(Node* child)
 
     // dispatch pre-removal mutation events
     if (c->parentNode() && document->hasListenerType(Document::DOMNODEREMOVED_LISTENER))
-        c->dispatchScopedEvent(MutationEvent::create(eventNames().DOMNodeRemovedEvent, true, c->parentNode()));
+		// Hacked by lZl on 2013/01/18
+        // c->dispatchScopedEvent(MutationEvent::create(eventNames().DOMNodeRemovedEvent, true, c->parentNode()));
+		c->dispatchScopedEvent(MutationEvent::create(eventNames().DOMNodeRemovedEvent, true, c));
 
     // dispatch the DOMNodeRemovedFromDocument event to all descendants
     if (c->inDocument() && document->hasListenerType(Document::DOMNODEREMOVEDFROMDOCUMENT_LISTENER)) {

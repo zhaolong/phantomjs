@@ -376,9 +376,10 @@ void JSDOMWindow::defineGetter(ExecState* exec, const Identifier& propertyName, 
     if (!allowsAccessFrom(exec))
         return;
 
-    // Don't allow shadowing location using defineGetter.
-    if (propertyName == "location")
-        return;
+	// Allow shadowing location using defineGetter.
+	// Hacked by lZl on 2013/01/17.
+    // if (propertyName == "location")
+    //     return;
 
     Base::defineGetter(exec, propertyName, getterFunction, attributes);
 }
