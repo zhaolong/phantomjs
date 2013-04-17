@@ -33,9 +33,9 @@
 #define CONSTS_H
 
 #define PHANTOMJS_VERSION_MAJOR     1
-#define PHANTOMJS_VERSION_MINOR     9
+#define PHANTOMJS_VERSION_MINOR     10
 #define PHANTOMJS_VERSION_PATCH     0
-#define PHANTOMJS_VERSION_STRING    "1.9.0 (development)"
+#define PHANTOMJS_VERSION_STRING    "1.10.0 (development)"
 
 #define COFFEE_SCRIPT_EXTENSION     ".coffee"
 
@@ -58,8 +58,11 @@
 #define PAGE_SETTINGS_USERNAME              "userName"
 #define PAGE_SETTINGS_PASSWORD              "password"
 #define PAGE_SETTINGS_MAX_AUTH_ATTEMPTS     "maxAuthAttempts"
+#define PAGE_SETTINGS_RESOURCE_TIMEOUT      "resourceTimeout"
 #define PAGE_SETTINGS_WEB_SECURITY_ENABLED  "webSecurityEnabled"
 #define PAGE_SETTINGS_JS_CAN_OPEN_WINDOWS   "javascriptCanOpenWindows"
 #define PAGE_SETTINGS_JS_CAN_CLOSE_WINDOWS  "javascriptCanCloseWindows"
+
+#define DEFAULT_WEBDRIVER_CONFIG            "127.0.0.1:8910"
 
 #endif // CONSTS_H
