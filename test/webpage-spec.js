@@ -1151,6 +1151,41 @@ describe("WebPage object", function() {
         });
     });
 
+
+    it("should change a url request with an encoded query string", function() {
+        var page = new require('webpage').create();
+
+        var server = require('webserver').create();
+        server.listen(12345, function(request, response) {
+            // echo received request headers in response body
+            response.write(JSON.stringify(request.headers));
+            response.close();
+        });
+
+        var url = "http://localhost:12345/cdn-cgi/pe/bag?r%5B%5D=http%3A%2F%2Fwww.example.org%2Fcdn-cgi%2Fnexp%2Fabv%3D927102467%2Fapps%2Fabetterbrowser.js";
+
+        var handled = false;
+        runs(function() {
+            expect(handled).toEqual(false);
+
+            page.onResourceRequested = function(requestData, request) {
+                request.changeUrl(requestData.url);
+            };
+
+           page.onResourceReceived = function(data) {
+                if (data['stage'] === 'end') {
+                    expect(data.url).toEqual(url);
+                }
+           };
+
+           page.open(url, function (status) {
+                expect(status == 'success').toEqual(true);
+                    handled = true;
+                });
+        });
+    });
+
+
     it('should able to abort a network request', function() {
         var page = require('webpage').create();
         var url = 'http://phantomjs.org';
@@ -1390,31 +1425,6 @@ describe("WebPage construction with options", function () {
         };
         checkViewportSize(new WebPage(opts), opts.viewportSize);
     });
-
-    var texts = [
-        { codec: 'Shift_JIS', base64: 'g3SDQIOTg2eDgA==', reference: 'ファントム'},
-        { codec: 'EUC-JP', base64: 'pdWloaXzpcil4A0K', reference: 'ファントム'},
-        { codec: 'ISO-2022-JP', base64: 'GyRCJVUlISVzJUglYBsoQg0K', reference: 'ファントム'},
-        { codec: 'Big5', base64: 'pNu2SA0K', reference: '幻象'},
-        { codec: 'GBK', base64: 'u8PP8w0K', reference: '幻象'}
-    ];
-    for (var i = 0; i < texts.length; ++i) {
-        describe("Text codec support", function() {
-            var text = texts[i];
-            var dataUrl = 'data:text/plain;charset=' + text.codec + ';base64,' + text.base64;
-            var page = new WebPage();
-            var decodedText;
-            page.open(dataUrl, function(status) {
-                decodedText = page.evaluate(function() {
-                    return document.getElementsByTagName('pre')[0].innerText;
-                });
-                page.close();
-            });
-            it("Should support text codec " + text.codec, function() {
-                expect(decodedText.match("^" + text.reference) == text.reference).toEqual(true);
-            });
-        });
-    }
 });
 
 describe("WebPage switch frame of execution (deprecated API)", function(){
@@ -2027,6 +2037,106 @@ describe("WebPage loading/loadingProgress properties", function() {
 
         runs(function() {
             s.close();
+        });
+    });
+});
+
+describe("WebPage network request headers handling", function() {
+    it("should add HTTP header to a network request", function() {
+        var page = require("webpage").create();
+        var server = require("webserver").create();
+        var isCustomHeaderPresented = false;
+
+        server.listen(12345, function(response) {
+            if (response.headers["CustomHeader"] && response.headers["CustomHeader"] === "CustomValue") {
+                isCustomHeaderPresented = true;
+            }
+        });
+
+        page.onResourceRequested = function(requestData, request) {
+            expect(typeof request.setHeader).toEqual("function");
+            request.setHeader("CustomHeader", "CustomValue");
+        };
+
+        runs(function() {
+            page.open("http://localhost:12345", function() {
+                expect(status).toEqual("success");
+            });
+        });
+
+        waits(3000);
+
+        runs(function() {
+            expect(isCustomHeaderPresented).toBeTruthy();
+            page.close();
+            server.close();
+        });
+    });
+
+    it("should remove HTTP header from a network request", function() {
+        var page = require("webpage").create();
+        page.customHeaders = {"CustomHeader": "CustomValue"};
+        
+        var server = require("webserver").create();
+        var handled = false;
+
+        server.listen(12345, function(request) {
+            if (request.headers["CustomHeader"] == null) {
+                handled = true;
+            }
+        });
+
+        page.onResourceRequested = function(requestData, request) {
+            expect(typeof request.setHeader).toEqual("function");
+            request.setHeader("CustomHeader", null);
+        };
+
+        runs(function() {
+            page.open("http://localhost:12345", function() {
+                expect(status).toEqual("success");
+            });
+        });
+
+        waits(3000);
+
+        runs(function() {
+            expect(handled).toBeTruthy();
+            page.close();
+            server.close();
+        });
+    });
+
+    it("should set HTTP header value for a network request", function() {
+        var page = require("webpage").create();
+        page.customHeaders = {"CustomHeader": "CustomValue"};
+        
+        var server = require("webserver").create();
+        var handled = false;
+
+        server.listen(12345, function(request) {
+            if (request.headers["CustomHeader"] && 
+                request.headers["CustomHeader"] === "ChangedCustomValue") {
+                handled = true;
+            }
+        });
+
+        page.onResourceRequested = function(requestData, request) {
+            expect(typeof request.setHeader).toEqual("function");
+            request.setHeader("CustomHeader", "ChangedCustomValue");
+        };
+
+        runs(function() {
+            page.open("http://localhost:12345", function() {
+                expect(status).toEqual("success");
+            });
+        });
+
+        waits(3000);
+
+        runs(function() {
+            expect(handled).toBeTruthy();
+            page.close();
+            server.close();
         });
     });
 });

@@ -37,12 +37,14 @@
 #include <QSslSocket>
 #include <QSslCertificate>
 #include <QRegExp>
-#include <limits>
 
 #include "phantom.h"
 #include "config.h"
 #include "cookiejar.h"
 #include "networkaccessmanager.h"
+
+// 10 MB
+const qint64 MAX_REQUEST_POST_BODY_SIZE = 10 * 1000 * 1000;
 
 static const char *toString(QNetworkAccessManager::Operation op)
 {
@@ -89,11 +91,21 @@ void JsNetworkRequest::abort()
     }
 }
 
+bool JsNetworkRequest::setHeader(const QString& name, const QVariant& value)
+{
+    if (!m_networkRequest)
+        return false;
 
-void JsNetworkRequest::changeUrl(const QString& url)
+    // Pass `null` as the second argument to remove a HTTP header
+    m_networkRequest->setRawHeader(name.toAscii(), value.toByteArray());
+    return true;
+}
+
+void JsNetworkRequest::changeUrl(const QString& address)
 {
     if (m_networkRequest) {
-        m_networkRequest->setUrl(QUrl(url));
+        QUrl url = QUrl::fromEncoded(QByteArray(address.toAscii()));
+        m_networkRequest->setUrl(url);
     }
 }
 
@@ -103,10 +115,10 @@ NetworkAccessManager::NetworkAccessManager(QObject *parent, const Config *config
     , m_ignoreSslErrors(config->ignoreSslErrors())
     , m_authAttempts(0)
     , m_maxAuthAttempts(3)
+    , m_resourceTimeout(0)
     , m_idCounter(0)
     , m_networkDiskCache(0)
     , m_sslConfiguration(QSslConfiguration::defaultConfiguration())
-    , m_resourceTimeout(0)
 {
     setCookieJar(CookieJar::instance());
 
@@ -207,7 +219,7 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
 
     // http://code.google.com/p/phantomjs/issues/detail?id=337
     if (op == QNetworkAccessManager::PostOperation) {
-        if (outgoingData) postData = outgoingData->peek((std::numeric_limits<qint64>::max)());
+        if (outgoingData) postData = outgoingData->peek(MAX_REQUEST_POST_BODY_SIZE);
         QString contentType = req.header(QNetworkRequest::ContentTypeHeader).toString();
         if (contentType.isEmpty()) {
             req.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
@@ -370,8 +382,6 @@ void NetworkAccessManager::handleFinished(QNetworkReply *reply, const QVariant &
     m_started.remove(reply);
 
     emit resourceReceived(data);
-
-    reply->deleteLater();
 }
 
 void NetworkAccessManager::handleSslErrors(const QList<QSslError> &errors)
